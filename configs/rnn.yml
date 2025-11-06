@@ -1,0 +1,115 @@
+# global parameters
+global_parameters:
+  # model related
+  - &model_arch_type 'RnnModel'
+  - &train true
+  - &dropout 0.5
+  # (修正 1: 必须是 6, 对应 trainer/dataset.py 中的 LABEL_LIST)
+  - &class_num 6
+  # data related
+  - &dataset_type 'DairAiEmbeddingDataset'
+  - &data_dir 'data/dair-ai'
+  # (修正 2: 'null' 会导致错误, 指定一个缓存路径)
+  - &cache_dir 'data/dair-ai/.cache'
+  
+  # (--- 关键修正: 设置为 true 来强制重新处理数据 ---)
+  - &overwrite_cache true 
+
+  - &word_embedding 'data/dair-ai/embedding/word_embedding.pkl'
+  - &num_workers 12
+  - &batch_size 64
+
+
+experiment_name: *model_arch_type
+num_gpu: 1
+device_id: '0'
+visual_device: '0'
+main_device_id: '0'
+resume_path: null
+
+# 模型
+model_arch:
+  type: *model_arch_type
+  args:
+    # (修正 3: 此行已删除。train.py 会自动注入 embedding_matrix)
+    # word_embedding: *word_embedding 
+    train: *train
+    dropout: *dropout
+    rnn_type: 'gru'
+    hidden_dim: 256
+    n_layers: 2
+    bidirectional: true
+    batch_first: true
+    class_num: *class_num
+
+train_set:
+  type: *dataset_type
+  args:
+    data_dir: *data_dir
+    file_name: 'train.jsonl'
+    cache_dir: *cache_dir
+    overwrite_cache: *overwrite_cache
+    # (修正 4: 参数名必须是 'word_embedding_path' 才能匹配 dataset.py)
+    word_embedding_path: *word_embedding
+    shuffle: true
+    batch_size: *batch_size
+    num_workers: *num_workers
+
+valid_set:
+  type: *dataset_type
+  args:
+    data_dir: *data_dir
+    # (修正 5: 文件名是 'validation.jsonl')
+    file_name: 'validation.jsonl'
+    cache_dir: *cache_dir
+    overwrite_cache: *overwrite_cache
+    # (修正 4: 参数名必须是 'word_embedding_path')
+    word_embedding_path: *word_embedding
+    # (修正 6: 验证集不应 shuffle)
+    shuffle: false
+    batch_size: *batch_size
+    num_workers: *num_workers
+
+test_set:
+  type: *dataset_type
+  args:
+    data_dir: *data_dir
+    file_name: 'test.jsonl'
+    cache_dir: *cache_dir
+    overwrite_cache: *overwrite_cache
+    # (修正 4: 参数名必须是 'word_embedding_path')
+    word_embedding_path: *word_embedding
+    # (修正 6: 测试集不应 shuffle)
+    shuffle: false
+    batch_size: *batch_size
+    num_workers: *num_workers
+
+
+optimizer:
+  type: 'Adam'
+  args:
+    lr: 0.001
+
+lr_scheduler:
+  type: 'get_linear_schedule_with_warmup'
+  args:
+    num_warmup_steps: 0
+
+loss:
+  - "ce_loss" # (请确保 'ce_loss' 在 model/loss.py 中已定义)
+
+metrics:
+  # (请确保这些在 model/metric.py 中已定义)
+  - 'categorical_accuracy'
+  - 'macro_precision'
+  - 'macro_recall'
+  - 'macro_f1'
+
+trainer:
+  epochs: 100
+  save_dir: 'saved/'
+  save_period: 1
+  verbosity: 2
+  monitor: "max val_macro_f1"
+  early_stop: 5
+  tensorboard: true

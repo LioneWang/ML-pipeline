@@ -1,0 +1,109 @@
+# global parameters
+global_parameters:
+  # model related
+  - &model_arch_type 'TransformersModel'
+  - &is_train true #[true,false] # 如果不使用transformers model，该参数表示是否训练词向量，如果使用transformers model，该参数表示是否对transformers model 进行微调
+  # (修正 1: dair-ai 是 6 个类)
+  - &class_num 6
+  # data related
+  # (修正 2: 切换到 dair-ai 的 dataset)
+  - &dataset_type 'DairAiTransformerDataset'
+  - &data_dir 'data/dair-ai' # 定义锚
+  - &cache_dir 'data/dair-ai/.cache'
+  # (修正 3: 强制覆盖缓存, 以防之前的 rnn 缓存导致问题)
+  - &overwrite_cache true   
+  # (修正 4: 切换到英文模型)
+  - &transformer_model 'roberta-base' # (推荐, 速度快, 性能好)
+  - &force_download false
+  - &num_workers 12
+  # (修正 5: 减小 batch_size 以防止 OOM)
+  - &batch_size 32
+
+
+experiment_name: *model_arch_type
+num_gpu: 1 # (从 2 改为 1, 除非您确定有 2 个 GPU)
+device_id: '0'
+visual_device: '0'
+main_device_id: '0'
+resume_path: null                         # path to latest checkpoint
+
+# 模型
+model_arch:
+  type: *model_arch_type
+  args:
+    transformer_model: *transformer_model
+    cache_dir: *cache_dir
+    force_download: *force_download
+    is_train: *is_train
+    class_num: *class_num
+
+train_set:
+  type: *dataset_type
+  args:
+    data_dir: *data_dir
+    file_name: 'train.jsonl' # (适配 dair-ai)
+    cache_dir: *cache_dir
+    overwrite_cache: *overwrite_cache
+    # (*** 关键修正 6: 匹配 dataset.py 的 __init__ 参数 ***)
+    transformer_model_name: *transformer_model
+    # (force_download 不是 DairAiTransformerDataset 的参数, 已移除)
+    # force_download: *force_download 
+    shuffle: true
+    batch_size: *batch_size   # data loader batch size
+    num_workers: *num_workers # data loader num of worker
+
+valid_set:
+  type: *dataset_type
+  args:
+    data_dir: *data_dir
+    file_name: 'validation.jsonl' # (适配 dair-ai)
+    cache_dir: *cache_dir
+    overwrite_cache: *overwrite_cache
+    # (*** 关键修正 6: 匹配 dataset.py 的 __init__ 参数 ***)
+    transformer_model_name: *transformer_model
+    shuffle: false # (验证集不应 shuffle)
+    batch_size: *batch_size   # data loader batch size
+    num_workers: *num_workers # data loader num of worker
+
+test_set:
+  type: *dataset_type
+  args:
+    data_dir: *data_dir
+    file_name: 'test.jsonl' # (适配 dair-ai)
+    cache_dir: *cache_dir
+    overwrite_cache: *overwrite_cache
+    # (*** 关键修正 6: 匹配 dataset.py 的 __init__ 参数 ***)
+    transformer_model_name: *transformer_model
+    shuffle: false # (测试集不应 shuffle)
+    batch_size: *batch_size   # data loader batch size
+    num_workers: *num_workers # data loader num of worker
+
+optimizer:
+  # (修正 7: AdamW 和 Transformer 专用学习率)
+  type: 'AdamW'
+  args:
+    lr: 3e-5 # (例如: 0.00003)
+
+lr_scheduler:
+  type: 'get_linear_schedule_with_warmup'
+  args:
+    num_warmup_steps: 100 # (为 Transformer 设置一个小的 warmup)
+
+loss:
+  - "ce_loss"
+
+metrics:
+  - 'categorical_accuracy'
+  - 'macro_precision'
+  - 'macro_recall'
+  - 'macro_f1'
+
+trainer:
+  # (修正 8: Transformer 训练 epoch 通常很少)
+  epochs: 15
+  save_dir: 'saved/'
+  save_period: 5
+  verbosity: 2
+  monitor: "max val_macro_f1"
+  early_stop: 2 # (Transformer 收敛很快)
+  tensorboard: true
